@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Calendário com WhatsApp</title>
+  <script src="https://unpkg.com/react@17/umd/react.development.js"></script>
+  <script src="https://unpkg.com/react-dom@17/umd/react-dom.development.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    .calendar-grid {
+      display: grid;
+      grid-template-columns: repeat(7, minmax(0, 1fr));
+    }
+    .dia-com-compromisso {
+      position: relative;
+    }
+    .dia-com-compromisso::after {
+      content: '';
+      position: absolute;
+      top: 2px;
+      right: 2px;
+      width: 8px;
+      height: 8px;
+      background-color: #EC4899;
+      border-radius: 50%;
+    }
+    .dia-atual {
+      border: 2px solid #10B981 !important;
+    }
+  </style>
+</head>
+<body class="bg-black text-pink-400 min-h-screen flex flex-col items-center p-4">
+  <div id="root"></div>
+
+  <script>
+    (function () {
+      const e = React.createElement;
+
+      function CalendarioApp() {
+        const hoje = new Date();
+        const [ano, setAno] = React.useState(hoje.getFullYear());
+        const [mes, setMes] = React.useState(hoje.getMonth());
+        const [selecionado, setSelecionado] = React.useState(hoje.getDate());
+        const [texto, setTexto] = React.useState("");
+        const [telefone, setTelefone] = React.useState("");
+        const [compromissos, setCompromissos] = React.useState(() => {
+          const saved = localStorage.getItem("compromissos");
+          return saved ? JSON.parse(saved) : {};
+        });
+        const [enviarAutomatico, setEnviarAutomatico] = React.useState(false);
+
+        // Função para formatar a mensagem corretamente
+        const formatarMensagem = (dataStr, texto) => {
+          return `Compromissos para ${dataStr}:\n${texto || "Sem compromisso."}`;
+        };
+
+        // Função para enviar mensagem pelo WhatsApp Web
+        const enviarWhatsAppWeb = (numero, mensagem) => {
+          const numeroFormatado = numero.replace(/[^0-9]/g, '');
+          const mensagemCodificada = encodeURIComponent(mensagem);
+          const link = `https://web.whatsapp.com/send?phone=${numeroFormatado}&text=${mensagemCodificada}`;
+          window.open(link, "_blank");
+        };
+
+        // Enviar compromissos do dia automaticamente ao carregar
+        React.useEffect(() => {
+          const hojeStr = `${String(hoje.getDate()).padStart(2, '0')}/${String(hoje.getMonth() + 1).padStart(2, '0')}/${hoje.getFullYear()}`;
+          const compromissoHoje = compromissos[hojeStr];
+          
+          if (compromissoHoje && compromissoHoje.telefone && compromissoHoje.enviarAutomatico) {
+            const mensagem = formatarMensagem(hojeStr, compromissoHoje.texto);
+            enviarWhatsAppWeb(compromissoHoje.telefone, mensagem);
+          }
+        }, []);
+
+        React.useEffect(() => {
+          localStorage.setItem("compromissos", JSON.stringify(compromissos));
+        }, [compromissos]);
+
+        const mudarMes = (incremento) => {
+          const novaData = new Date(ano, mes + incremento, 1);
+          setAno(novaData.getFullYear());
+          setMes(novaData.getMonth());
+        };
+
+        const diasDoMes = (ano, mes) => {
+          const primeiroDia = new Date(ano, mes, 1);
+          const ultimoDia = new Date(ano, mes + 1, 0);
+          const dias = [];
+          for (let i = 0; i < primeiroDia.getDay(); i++) dias.push(null);
+          for (let d = 1; d <= ultimoDia.getDate(); d++) dias.push(d);
+          return dias;
+        };
+
+        const temCompromisso = (dia) => {
+          if (!dia) return false;
+          const dataStr = `${String(dia).padStart(2, '0')}/${String(mes + 1).padStart(2, '0')}/${ano}`;
+          return compromissos[dataStr] && compromissos[dataStr].texto;
+        };
+
+        const ehHoje = (dia) => {
+          return dia === hoje.getDate() && mes === hoje.getMonth() && ano === hoje.getFullYear();
+        };
+
+        const dias = diasDoMes(ano, mes);
+        const nomesDias = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
+        const nomesMeses = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
+        const dataStr = selecionado ? `${String(selecionado).padStart(2, '0')}/${String(mes + 1).padStart(2, '0')}/${ano}` : "";
+
+        const salvarCompromisso = () => {
+          if (!selecionado || !texto.trim()) return alert("Selecione uma data e escreva o compromisso.");
+          
+          const novoCompromisso = {
+            texto: texto,
+            telefone: telefone,
+            enviarAutomatico: enviarAutomatico
+          };
+          
+          setCompromissos(prev => ({
+            ...prev,
+            [dataStr]: novoCompromisso
+          }));
+          
+          setTexto("");
+          setTelefone("");
+          
+          if (enviarAutomatico && telefone) {
+            const mensagem = formatarMensagem(dataStr, texto);
+            enviarWhatsAppWeb(telefone, mensagem);
+            alert("Compromisso salvo e mensagem sendo enviada pelo WhatsApp Web!");
+          } else {
+            alert("Compromisso salvo!");
+          }
+        };
+
+        const enviarWhatsApp = () => {
+          if (!telefone && !compromissos[dataStr]?.telefone) {
+            return alert("Informe um número de WhatsApp.");
+          }
+          
+          const numero = telefone || compromissos[dataStr]?.telefone;
+          const mensagem = formatarMensagem(dataStr, compromissos[dataStr]?.texto || texto);
+          enviarWhatsAppWeb(numero, mensagem);
+        };
+
+        return e("div", { className: "w-full max-w-2xl" },
+          e("h1", { className: "text-2xl font-bold text-center mb-4" }, "Calendário com Compromissos e WhatsApp"),
+          
+          // Controles de navegação do mês/ano
+          e("div", { className: "flex justify-between items-center mb-4" },
+            e("button", {
+              onClick: () => mudarMes(-1),
+              className: "px-4 py-2 bg-pink-400 text-black font-bold"
+            }, "◀ Mês Anterior"),
+            e("h2", { className: "text-xl font-bold" }, `${nomesMeses[mes]} ${ano}`),
+            e("button", {
+              onClick: () => mudarMes(1),
+              className: "px-4 py-2 bg-pink-400 text-black font-bold"
+            }, "Próximo Mês ▶")
+          ),
+          
+          // Seletor de ano/mês
+          e("div", { className: "flex gap-4 mb-4" },
+            e("select", {
+              value: mes,
+              onChange: (ev) => setMes(parseInt(ev.target.value)),
+              className: "bg-black text-pink-400 border border-pink-400 p-2 flex-1"
+            },
+              nomesMeses.map((nome, idx) => 
+                e("option", { key: idx, value: idx }, nome)
+              )
+            ),
+            e("select", {
+              value: ano,
+              onChange: (ev) => setAno(parseInt(ev.target.value)),
+              className: "bg-black text-pink-400 border border-pink-400 p-2 flex-1"
+            },
+              Array.from({length: 10}, (_, i) => new Date().getFullYear() - 5 + i).map((year) =>
+                e("option", { key: year, value: year }, year)
+              )
+            )
+          ),
+
+          // Grade do calendário
+          e("div", { className: "calendar-grid border border-pink-400" },
+            nomesDias.map((dia, i) =>
+              e("div", { key: i, className: "text-center font-bold border border-pink-400 p-2" }, dia)
+            ),
+            dias.map((dia, i) =>
+              e("div", {
+                key: i,
+                className: `text-center p-2 border border-pink-400 cursor-pointer relative ${
+                  dia === selecionado ? 'bg-pink-400 text-black font-bold' : ''
+                } ${temCompromisso(dia) ? 'dia-com-compromisso' : ''} ${
+                  ehHoje(dia) ? 'dia-atual' : ''
+                }`,
+                onClick: () => dia && setSelecionado(dia)
+              }, dia || "")
+            )
+          ),
+
+          // Área de compromissos
+          selecionado && e("div", { className: "mt-4" },
+            e("p", { className: "text-lg mb-2" }, `Data selecionada: ${dataStr}`),
+            e("textarea", {
+              value: texto,
+              onChange: ev => setTexto(ev.target.value),
+              className: "w-full h-24 p-2 bg-black text-pink-400 border border-pink-400",
+              placeholder: "Digite o compromisso..."
+            }),
+            e("input", {
+              value: telefone,
+              onChange: ev => setTelefone(ev.target.value),
+              placeholder: "Número do WhatsApp (+55DDD...)",
+              className: "w-full mt-2 p-2 bg-black text-pink-400 border border-pink-400"
+            }),
+            e("div", { className: "flex items-center mt-2" },
+              e("input", {
+                type: "checkbox",
+                checked: enviarAutomatico,
+                onChange: () => setEnviarAutomatico(!enviarAutomatico),
+                className: "mr-2"
+              }),
+              e("label", null, "Enviar automaticamente pelo WhatsApp Web")
+            ),
+            e("div", { className: "flex gap-2 mt-2" },
+              e("button", {
+                onClick: salvarCompromisso,
+                className: "flex-1 px-4 py-2 bg-pink-400 text-black font-bold"
+              }, "Salvar Compromisso"),
+              e("button", {
+                onClick: enviarWhatsApp,
+                className: "flex-1 px-4 py-2 bg-green-500 text-black font-bold"
+              }, "Enviar WhatsApp Web")
+            ),
+            compromissos[dataStr] && e("div", { className: "mt-4" },
+              e("p", null, "Compromisso salvo:"),
+              e("p", { className: "font-bold" }, compromissos[dataStr].texto || ""),
+              compromissos[dataStr].enviarAutomatico && e("p", { className: "text-green-400" }, "✔ Será enviado automaticamente")
+            )
+          )
+        );
+      }
+
+      ReactDOM.render(e(CalendarioApp), document.getElementById("root"));
+    })();
+  </script>
+</body>
+</html>
